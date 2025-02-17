@@ -91,7 +91,7 @@ trivy --version
 
 ### Scanner l'image de l'API
 ```bash
-sudo trivy image ping-api  # ou l'image construite via votre Dockerfile, si vous souhaitez la scanner séparément
+sudo trivy image wik-dps-tp03-api  # ou l'image construite via votre Dockerfile, si vous souhaitez la scanner séparément
 ```
 
 ## Fichiers Exposés dans le Dépôt
