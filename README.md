@@ -1,89 +1,86 @@
-# WIK-DPS-TP02 - Ping-Api-Dockerized
+# WIK-DPS-TP03 - Ping-Api-Dockerized with Docker Compose & Reverse-Proxy
 
-## Overview
+## Contexte et Objectifs
 
-Ce projet est la deuxième étape de notre série de travaux pratiques. Il se base sur le projet [Ping-API](#) qui a permis de créer une API Node.js/TypeScript renvoyant les headers d'une requête GET sur `/ping`. Ici, nous dockerisons cette API en proposant deux approches :
+Ce projet est la troisième étape de la série de TP. Il s'appuie sur le TP02 (où l'on dockerisait une API Node.js/TypeScript renvoyant les headers d'une requête GET sur `/ping`) et y ajoute :
 
-- **Single-Stage Docker Image :** Une image unique intégrant l'application compilée.
-- **Multi-Stage Docker Image :** Une image optimisée utilisant une phase de build distincte de l'exécution, ce qui permet de réduire la taille de l'image finale et d'améliorer la sécurité.
-
-De plus, nous utilisons Trivy pour scanner l'image Docker à la recherche de vulnérabilités.
-
-## Contexte et Utilité
-
-- **Objectif :** Dockeriser une application Node.js/TypeScript pour faciliter son déploiement et garantir des builds optimisés.
-- **Utilité :** Permettre un déploiement rapide, sécurisé et reproductible de l'API.
-- **Sécurité :** Utilisation d'un utilisateur non-root dans le conteneur et scan régulier des images via Trivy.
+- **Docker Compose** pour orchestrer l'application entière.
+- **4 réplicas** du service API.
+- **Un reverse-proxy Nginx** qui est le seul service exposé sur l'hôte (port 8080) et qui fait du load balancing entre les réplicas.
+- **Modification de l'API** pour afficher le hostname dans les logs/réponses (pour observer l'équilibrage de charge).
 
 ## Prérequis
 
-### Logiciels requis
-
-- **Node.js** (version 18, comme indiqué dans le fichier `.nvmrc`)
+- **Node.js v18** (cf. `.nvmrc`)
 - **npm**
 - **Docker**  
-  > Sur certaines distributions (ex. Kali Linux), vous devrez peut-être préfixer les commandes Docker avec `sudo`.  
-  > Pour éviter cela, ajoutez votre utilisateur au groupe Docker :
+  > Utilisez `sudo` si nécessaire ou ajoutez votre utilisateur au groupe Docker :
   > ```bash
   > sudo usermod -aG docker $(whoami)
   > ```
-  > puis déconnectez-vous et reconnectez-vous.
-- **Trivy**  
-  Un outil de scan des vulnérabilités pour les images Docker.
+- **Docker Compose**  
+  Inclus avec Docker Desktop ou disponible en tant que plugin pour Docker Engine.
+- **Trivy** (optionnel) pour scanner les vulnérabilités
 
-### Installation des dépendances Node.js
+## Installation des Dépendances
 
-Après clonage du dépôt, installez les dépendances :
+Après avoir cloné le dépôt, installez les dépendances Node.js :
 ```bash
 npm install
 ```
 
-## Compilation & Test Local
-1. **Compiler** :
+## Compilation et Test Local de l'API
+
+1. **Compiler le projet (TypeScript → JavaScript)** :
    ```bash
    npm run build
    ```
-2. **Lancer l'API** :
+2. **Lancer l'API localement** (optionnel) :
    ```bash
    npm start
    ```
-3. **Tester** :
+3. **Tester l'API** :
+   - Requête GET sur `/ping` (doit retourner 200 OK et inclure le hostname) :
+     ```bash
+     curl -X GET -i http://localhost:8080/ping
+     ```
+   - Requête POST sur `/ping` (doit retourner 404 Not Found) :
+     ```bash
+     curl -X POST -i http://localhost:8080/ping
+     ```
+
+## Orchestration avec Docker Compose
+
+Le fichier `docker-compose.yaml` orchestre deux services :
+
+- **api** : Construit à partir du Dockerfile (le même que TP02), déployé en 4 réplicas (ne publie pas de port directement).
+- **reverse-proxy** : Utilise l'image `nginx:alpine` avec une configuration personnalisée (`nginx.conf`) pour faire du load balancing vers le service API. Seul ce service est exposé sur l'hôte via le port 8080.
+
+### Pour lancer l'environnement complet :
+
+1. **Construire et lancer les services en arrière-plan** :
    ```bash
-   curl -X GET -i http://localhost:8080/ping   # doit renvoyer 200 OK avec JSON
-   curl -X POST -i http://localhost:8080/ping   # doit renvoyer 404 Not Found
+   sudo docker compose up --build -d
+   ```
+2. **Vérifier l'état des conteneurs** :
+   ```bash
+   sudo docker compose ps
+   ```
+   Vous devriez voir 4 conteneurs pour le service `api` et 1 conteneur pour le service `reverse-proxy`.
+
+3. **Tester le Reverse-Proxy** :
+   Envoyez une requête GET sur `/ping` :
+   ```bash
+   curl -X GET -i http://localhost:8080/ping
+   ```
+   La réponse doit inclure le hostname du conteneur API qui a traité la requête, démontrant ainsi l'équilibrage de charge.
+
+4. **Arrêter l'environnement** :
+   ```bash
+   sudo docker compose down
    ```
 
-## Utilisation de Docker
-
-### Image Single-Stage
-- **Build** :
-  ```bash
-  sudo docker build -t ping-api-single .
-  ```
-- **Run** :
-  ```bash
-  sudo docker run -d -p 8080:8080 --name ping-single ping-api-single
-  ```
-- **Stop & Remove** :
-  ```bash
-  sudo docker rm -f ping-single
-  ```
-  
-### Image Multi-Stage
-- **Build** (sans cache recommandé) :
-  ```bash
-  sudo docker build --no-cache -f Dockerfile.multi -t ping-api-multi .
-  ```
-- **Run** :
-  ```bash
-  sudo docker run -d -p 8080:8080 --name ping-multi ping-api-multi
-  ```
-- **Stop & Remove** :
-  ```bash
-  sudo docker rm -f ping-multi
-  ```
-  
-## Scan de Vulnérabilités avec Trivy
+## Scan de Vulnérabilités avec Trivy (Optionnel)
 
 ### Installation de Trivy (Debian/Kali)
 ```bash
@@ -92,8 +89,24 @@ sudo dpkg -i trivy_0.32.1_Linux-64bit.deb
 trivy --version
 ```
 
-### Scanner l'image
+### Scanner l'image de l'API
 ```bash
-sudo trivy image ping-api-single
-sudo trivy image ping-api-multi
+sudo trivy image ping-api  # ou l'image construite via votre Dockerfile, si vous souhaitez la scanner séparément
+```
+
+## Fichiers Exposés dans le Dépôt
+
+La structure finale du projet est la suivante :
+```plaintext
+.
+├── docker-compose.yaml
+├── Dockerfile         # Dockerfile de base pour construire l'image de l'API
+├── nginx.conf         # Configuration Nginx pour le reverse-proxy
+├── package.json
+├── package-lock.json
+├── README.md
+├── src
+│   └── index.ts
+└── tsconfig.json
+
 ```
